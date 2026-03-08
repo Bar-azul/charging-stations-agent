@@ -2,12 +2,12 @@
 # Ref: aka.ms/functions-azure-monitor-python
 # azure-monitor-opentelemetry
 
-streamlit==1.44.1
-openai==1.68.2
-python-dotenv==1.0.1
-numpy==1.26.4
-pandas==2.2.3
+openai
+python-dotenv
+numpy
 chromadb
-pydantic==1.10.15
-folium==0.19.5
-streamlit-folium==0.24.0
+pandas
+streamlit
+folium
+streamlit-folium
+pysqlite3-binary
