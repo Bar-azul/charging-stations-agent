@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import sys
+
+try:
+    __import__("pysqlite3")
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except Exception:
+    pass
+
 import os
 import traceback
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
 # =========================
-# Page Setup
+# Page Setup FIRST
 # =========================
 st.set_page_config(
     page_title="תחנות טעינה - סוכן ניתוח מתחרים",
@@ -18,132 +27,49 @@ st.set_page_config(
 )
 
 # =========================
-# Early Debug / Paths
+# Early Paths / Env
 # =========================
 APP_DIR = Path(__file__).parent
 CHROMA_DIR = APP_DIR / "chroma_db"
 DATA_DIR = APP_DIR / "data"
 LOGO_PATH = APP_DIR / "paz_logo.png"
 UTILS_DIR = APP_DIR / "Utils"
+COLLECTION_NAME = "ev_stations_lab3"
 
 load_dotenv()
 
-st.write("APP STARTED")
-st.write("Current working dir:", os.getcwd())
-st.write("APP_DIR:", str(APP_DIR))
-st.write("APP_DIR exists:", APP_DIR.exists())
-
-try:
-    st.write("Files in APP_DIR:", os.listdir(APP_DIR))
-except Exception as e:
-    st.write("Failed listing APP_DIR:", str(e))
-
-st.write("CHROMA_DIR:", str(CHROMA_DIR))
-st.write("CHROMA_DIR exists:", CHROMA_DIR.exists())
-if CHROMA_DIR.exists():
+# =========================
+# Helpers - always available
+# =========================
+def safe_listdir(path: Path) -> list[str]:
     try:
-        st.write("CHROMA_DIR files:", os.listdir(CHROMA_DIR))
-    except Exception as e:
-        st.write("Failed listing CHROMA_DIR:", str(e))
+        if path.exists() and path.is_dir():
+            return sorted(os.listdir(path))
+        return []
+    except Exception:
+        return []
 
-st.write("DATA_DIR:", str(DATA_DIR))
-st.write("DATA_DIR exists:", DATA_DIR.exists())
-if DATA_DIR.exists():
-    try:
-        st.write("DATA_DIR files:", os.listdir(DATA_DIR))
-    except Exception as e:
-        st.write("Failed listing DATA_DIR:", str(e))
-
-st.write("UTILS_DIR:", str(UTILS_DIR))
-st.write("UTILS_DIR exists:", UTILS_DIR.exists())
-if UTILS_DIR.exists():
-    try:
-        st.write("UTILS_DIR files:", os.listdir(UTILS_DIR))
-    except Exception as e:
-        st.write("Failed listing UTILS_DIR:", str(e))
-
-st.write("LOGO_PATH exists:", LOGO_PATH.exists())
+def debug_exception(title: str, exc: Exception | None = None) -> None:
+    st.error(title)
+    if exc is not None:
+        st.code(traceback.format_exc())
 
 # =========================
-# Imports from Utils (guarded)
+# Runtime flags
 # =========================
-try:
-    from Utils.ai_utils import generate_ai_answer, get_embedding
-    from Utils.geo_utils import detect_geo_intent, geo_filter
-    from Utils.rerank_utils import apply_filters, rerank_results
-    from Utils.search_utils import get_chroma_collection, load_all_metadata, search_vector_db
-    from Utils.ui_utils import (
-        get_global_css,
-        jump_page_to_top,
-        render_chat_history,
-        render_result_card,
-        build_folium_map,
-        safe_text,
-    )
+utils_loaded = False
+client_ready = False
+collection_ready = False
+metadata_ready = False
 
-    st.success("Utils imports loaded successfully")
+utils_import_error = None
+client_error = None
+collection_error = None
+metadata_error = None
 
-except Exception as e:
-    st.error("Failed importing Utils modules")
-    st.code(traceback.format_exc())
-    st.stop()
-
-# =========================
-# Config
-# =========================
-COLLECTION_NAME = "ev_stations_lab3"
-
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
-AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
-
-# Debug secrets existence
-st.write("API KEY exists:", bool(AZURE_OPENAI_API_KEY))
-st.write("ENDPOINT exists:", bool(AZURE_OPENAI_ENDPOINT))
-st.write("EMBEDDING DEPLOYMENT:", AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-st.write("CHAT DEPLOYMENT:", AZURE_OPENAI_CHAT_DEPLOYMENT)
-
-if not AZURE_OPENAI_API_KEY:
-    st.error("Missing AZURE_OPENAI_API_KEY")
-    st.stop()
-
-if not AZURE_OPENAI_ENDPOINT:
-    st.error("Missing AZURE_OPENAI_ENDPOINT")
-    st.stop()
-
-if not AZURE_OPENAI_EMBEDDING_DEPLOYMENT:
-    st.error("Missing AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
-    st.stop()
-
-if not AZURE_OPENAI_CHAT_DEPLOYMENT:
-    st.error("Missing AZURE_OPENAI_CHAT_DEPLOYMENT")
-    st.stop()
-
-# =========================
-# Azure OpenAI Client
-# =========================
-try:
-    client = AzureOpenAI(
-        api_key=AZURE_OPENAI_API_KEY,
-        api_version="2024-02-01",
-        azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    )
-    st.success("AzureOpenAI client created successfully")
-except Exception:
-    st.error("Failed creating AzureOpenAI client")
-    st.code(traceback.format_exc())
-    st.stop()
-
-# =========================
-# Global CSS
-# =========================
-try:
-    st.markdown(get_global_css(), unsafe_allow_html=True)
-except Exception:
-    st.error("Failed applying global CSS")
-    st.code(traceback.format_exc())
-    st.stop()
+collection = None
+metadata_df = None
+client = None
 
 # =========================
 # Session State
@@ -174,29 +100,211 @@ if st.session_state.pending_query is not None:
     st.session_state.pending_query = None
 
 # =========================
-# Load Collection + Metadata
+# Try importing Utils
 # =========================
 try:
-    collection = get_chroma_collection(CHROMA_DIR, COLLECTION_NAME)
-    st.success("Chroma collection loaded successfully")
-except Exception:
-    st.error("Failed loading Chroma collection")
-    st.code(traceback.format_exc())
-    st.stop()
+    from Utils.ai_utils import generate_ai_answer, get_embedding
+    from Utils.geo_utils import detect_geo_intent, geo_filter
+    from Utils.rerank_utils import apply_filters, rerank_results
+    from Utils.search_utils import get_chroma_collection, load_all_metadata, search_vector_db
+    from Utils.ui_utils import (
+        get_global_css,
+        jump_page_to_top,
+        render_chat_history,
+        render_result_card,
+        build_folium_map,
+        safe_text,
+    )
+    utils_loaded = True
+except Exception as e:
+    utils_import_error = e
 
-try:
-    metadata_df = load_all_metadata(collection)
-    st.success(f"Metadata loaded successfully. Rows: {len(metadata_df)}")
-except Exception:
-    st.error("Failed loading metadata dataframe")
-    st.code(traceback.format_exc())
-    st.stop()
+# =========================
+# Minimal fallbacks if Utils failed
+# =========================
+if not utils_loaded:
+    def safe_text(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
+    def get_global_css() -> str:
+        return """
+        <style>
+            html, body, [class*="css"] {
+                direction: rtl;
+                text-align: right;
+            }
+
+            .block-container {
+                padding-top: 0.5rem;
+                padding-bottom: 2rem;
+                max-width: 1520px;
+            }
+
+            .section-title {
+                color: #0A234F;
+                font-size: 2rem;
+                font-weight: 900;
+                margin-top: 0.45rem;
+                margin-bottom: 0.8rem;
+            }
+
+            .sidebar-logo-wrap {
+                display: flex;
+                justify-content: center;
+                margin-bottom: 12px;
+            }
+
+            .fixed-top-shell {
+                position: fixed;
+                top: 0.5rem;
+                left: 0;
+                right: 0;
+                z-index: 9999;
+                pointer-events: none;
+            }
+
+            .fixed-top-inner {
+                width: min(1520px, calc(100vw - 22rem));
+                margin-right: auto;
+                margin-left: 1rem;
+                pointer-events: auto;
+            }
+
+            .fixed-header-panel {
+                border: 1px solid rgba(10,35,79,0.10);
+                border-radius: 24px;
+                overflow: hidden;
+                background: #ffffff;
+                box-shadow: 0 10px 24px rgba(6,22,50,0.10);
+            }
+
+            .hero-box {
+                padding: 18px 24px 16px 24px;
+                background: linear-gradient(135deg, #061632 0%, #0A234F 55%, #143A7B 100%);
+                color: white;
+            }
+
+            .hero-title {
+                color: white;
+                font-size: 2rem;
+                font-weight: 800;
+                line-height: 1.1;
+                margin-bottom: 6px;
+            }
+
+            .hero-subtitle {
+                color: #E6EEF8;
+                font-size: 1rem;
+            }
+
+            .search-panel {
+                padding: 14px 16px 16px 16px;
+                background: linear-gradient(180deg, #FFFFFF 0%, #FBFCFE 100%);
+            }
+
+            .search-title {
+                color: #0A234F;
+                font-weight: 900;
+                font-size: 1rem;
+                margin-bottom: 10px;
+            }
+
+            .quick-caption {
+                color: #667085;
+                font-size: 0.9rem;
+                margin-bottom: 0.55rem;
+            }
+
+            .header-spacer {
+                height: 20px;
+            }
+        </style>
+        """
+
+    def jump_page_to_top() -> None:
+        pass
+
+    def render_chat_history(chat_history, scroll_to_last_user=False) -> None:
+        if not chat_history:
+            st.info("עדיין אין שיחה.")
+            return
+
+        for i, msg in enumerate(chat_history, start=1):
+            role = "שאלה" if msg.get("role") == "user" else "תשובה"
+            with st.container(border=True):
+                st.write(f"**{role}**")
+                st.write(msg.get("content", ""))
+
+    def render_result_card(result, index: int) -> None:
+        with st.container(border=True):
+            st.write(f"**תוצאה #{index}**")
+            st.json(result)
+
+    def build_folium_map(results):
+        return None
+
+# =========================
+# Apply CSS
+# =========================
+st.markdown(get_global_css(), unsafe_allow_html=True)
+
+# =========================
+# Secrets / Config
+# =========================
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
+
+# =========================
+# Try Azure client
+# =========================
+if utils_loaded:
+    try:
+        if (
+            AZURE_OPENAI_API_KEY
+            and AZURE_OPENAI_ENDPOINT
+            and AZURE_OPENAI_EMBEDDING_DEPLOYMENT
+            and AZURE_OPENAI_CHAT_DEPLOYMENT
+        ):
+            client = AzureOpenAI(
+                api_key=AZURE_OPENAI_API_KEY,
+                api_version="2024-02-01",
+                azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            )
+            client_ready = True
+        else:
+            client_error = RuntimeError("Missing one or more Azure OpenAI environment variables")
+    except Exception as e:
+        client_error = e
+
+# =========================
+# Try Collection + Metadata
+# =========================
+if utils_loaded:
+    try:
+        collection = get_chroma_collection(CHROMA_DIR, COLLECTION_NAME)
+        collection_ready = True
+    except Exception as e:
+        collection_error = e
+
+    if collection_ready:
+        try:
+            metadata_df = load_all_metadata(collection)
+            metadata_ready = True
+        except Exception as e:
+            metadata_error = e
+
+# =========================
+# Options
+# =========================
 city_options = ["הכל"]
 company_options = ["הכל"]
 current_type_options = ["הכל"]
 
-if not metadata_df.empty:
+if metadata_ready and metadata_df is not None and not metadata_df.empty:
     city_options += sorted(
         [x for x in metadata_df["city"].dropna().astype(str).unique().tolist() if x.strip()]
     )
@@ -208,17 +316,71 @@ if not metadata_df.empty:
     )
 
 # =========================
+# Top App Health
+# =========================
+app_can_search = utils_loaded and client_ready and collection_ready and metadata_ready
+
+status_cols = st.columns(4)
+with status_cols[0]:
+    st.metric("Utils", "OK" if utils_loaded else "FAIL")
+with status_cols[1]:
+    st.metric("Azure Client", "OK" if client_ready else "FAIL")
+with status_cols[2]:
+    st.metric("Chroma", "OK" if collection_ready else "FAIL")
+with status_cols[3]:
+    st.metric("Metadata", "OK" if metadata_ready else "FAIL")
+
+if not app_can_search:
+    st.warning("האפליקציה עלתה במצב Debug / Fallback. אפשר לראות UI ולוגים, אבל החיפוש כרגע לא זמין עד שתיפתר התקלה.")
+
+# =========================
 # Debug Expander
 # =========================
-with st.expander("Debug מידע טכני", expanded=False):
+with st.expander("Debug מידע טכני", expanded=True):
+    st.write("APP STARTED")
+    st.write("Python version:", sys.version)
+    st.write("Current working dir:", os.getcwd())
     st.write("APP_DIR:", str(APP_DIR))
+    st.write("APP_DIR exists:", APP_DIR.exists())
+    st.write("Files in APP_DIR:", safe_listdir(APP_DIR))
     st.write("CHROMA_DIR:", str(CHROMA_DIR))
+    st.write("CHROMA_DIR exists:", CHROMA_DIR.exists())
+    st.write("CHROMA_DIR files:", safe_listdir(CHROMA_DIR))
+    st.write("DATA_DIR:", str(DATA_DIR))
+    st.write("DATA_DIR exists:", DATA_DIR.exists())
+    st.write("DATA_DIR files:", safe_listdir(DATA_DIR))
+    st.write("UTILS_DIR:", str(UTILS_DIR))
+    st.write("UTILS_DIR exists:", UTILS_DIR.exists())
+    st.write("UTILS_DIR files:", safe_listdir(UTILS_DIR))
+    st.write("LOGO_PATH exists:", LOGO_PATH.exists())
     st.write("COLLECTION_NAME:", COLLECTION_NAME)
-    st.write("Logo exists:", LOGO_PATH.exists())
-    st.write("Metadata shape:", getattr(metadata_df, "shape", None))
-    st.write("City options count:", len(city_options))
-    st.write("Company options count:", len(company_options))
-    st.write("Current type options count:", len(current_type_options))
+
+    st.write("API KEY exists:", bool(AZURE_OPENAI_API_KEY))
+    st.write("ENDPOINT exists:", bool(AZURE_OPENAI_ENDPOINT))
+    st.write("EMBEDDING DEPLOYMENT:", AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+    st.write("CHAT DEPLOYMENT:", AZURE_OPENAI_CHAT_DEPLOYMENT)
+
+    if utils_import_error:
+        st.error("Utils import error")
+        st.code(traceback.format_exc())
+
+    if client_error:
+        st.error("Azure client error")
+        st.write(str(client_error))
+
+    if collection_error:
+        st.error("Collection load error")
+        st.write(str(collection_error))
+        st.code(traceback.format_exc())
+
+    if metadata_error:
+        st.error("Metadata load error")
+        st.write(str(metadata_error))
+        st.code(traceback.format_exc())
+
+    st.write("metadata_ready:", metadata_ready)
+    if metadata_ready and metadata_df is not None:
+        st.write("metadata shape:", metadata_df.shape)
 
 # =========================
 # Sidebar
@@ -340,21 +502,29 @@ with st.container():
         )
 
     with q3:
-        generate_ai_summary = st.toggle("תשובת AI", value=True)
+        generate_ai_summary = st.toggle("תשובת AI", value=True, disabled=not app_can_search)
 
-    search_clicked = st.button("חפש", type="primary", use_container_width=True)
+    search_clicked = st.button(
+        "חפש",
+        type="primary",
+        use_container_width=True,
+        disabled=not app_can_search,
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 if st.session_state.sidebar_jump_to_top:
-    jump_page_to_top()
+    try:
+        jump_page_to_top()
+    except Exception:
+        pass
     st.session_state.sidebar_jump_to_top = False
 
 # =========================
 # Search Flow
 # =========================
-if search_clicked:
+if search_clicked and app_can_search:
     user_query = st.session_state.query_input.strip()
 
     if not user_query:
@@ -440,10 +610,15 @@ if search_clicked:
 # Assistant Section
 # =========================
 st.markdown('<div class="section-title">Assistant</div>', unsafe_allow_html=True)
-render_chat_history(
-    st.session_state.chat_history,
-    scroll_to_last_user=st.session_state.assistant_scroll_to_last_user,
-)
+try:
+    render_chat_history(
+        st.session_state.chat_history,
+        scroll_to_last_user=st.session_state.assistant_scroll_to_last_user,
+    )
+except Exception:
+    st.error("Failed rendering chat history")
+    st.code(traceback.format_exc())
+
 st.session_state.assistant_scroll_to_last_user = False
 
 # =========================
