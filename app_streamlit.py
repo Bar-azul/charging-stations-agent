@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import sys
 
 try:
@@ -8,8 +7,8 @@ try:
     sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 except Exception:
     pass
-from pathlib import Path
 
+from pathlib import Path
 import streamlit as st
 
 from agent_logic import get_filter_options, search_agent
@@ -35,6 +34,78 @@ st.set_page_config(
     page_title="תחנות טעינה - סוכן ניתוח מתחרים",
     page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "⚡",
     layout="wide",
+)
+
+# =========================
+# CSS Fix (sidebar overflow fix)
+# =========================
+st.markdown(
+    """
+<style>
+
+/* Prevent horizontal overflow everywhere */
+html, body, [data-testid="stAppViewContainer"], .main {
+    overflow-x: hidden !important;
+}
+
+/* Main container width */
+.block-container {
+    max-width: 1520px;
+    margin: auto;
+}
+
+/* ===== FIXED HEADER ===== */
+
+.fixed-top-shell {
+    position: fixed;
+    top: 0.5rem;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.fixed-top-inner {
+    width: 100%;
+    max-width: 1520px;
+    margin: 0 auto;
+    pointer-events: auto;
+}
+
+/* Prevent sidebar pushing layout */
+[data-testid="stSidebar"] {
+    z-index: 1000;
+}
+
+/* ===== MOBILE FIX ===== */
+
+@media (max-width: 768px) {
+
+    .fixed-top-shell {
+        position: static;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    .header-spacer {
+        display: none;
+    }
+
+    .hero-title {
+        font-size: 26px !important;
+    }
+
+    .hero-subtitle {
+        font-size: 16px !important;
+    }
+}
+
+</style>
+""",
+    unsafe_allow_html=True,
 )
 
 st.markdown(get_global_css(), unsafe_allow_html=True)
@@ -71,6 +142,7 @@ if st.session_state.pending_query is not None:
 # Filter Options
 # =========================
 options = get_filter_options()
+
 city_options = options["city_options"]
 company_options = options["company_options"]
 current_type_options = options["current_type_options"]
@@ -79,10 +151,9 @@ current_type_options = options["current_type_options"]
 # Sidebar
 # =========================
 with st.sidebar:
+
     if LOGO_PATH.exists():
-        st.markdown('<div class="sidebar-logo-wrap">', unsafe_allow_html=True)
         st.image(str(LOGO_PATH), width=76)
-        st.markdown("</div>", unsafe_allow_html=True)
 
     st.header("פילטרים")
 
@@ -121,86 +192,75 @@ with st.sidebar:
     st.markdown("---")
 
     if st.button("נקה שיחה", use_container_width=True):
+
         st.session_state.chat_history = []
         st.session_state.last_results = []
         st.session_state.last_query = ""
         st.session_state.pending_query = None
         st.session_state.assistant_scroll_to_last_user = False
         st.session_state.sidebar_jump_to_top = False
+
         st.rerun()
 
 # =========================
-# Fixed Header Visual Shell
+# Fixed Header
 # =========================
 st.markdown(
     """
-    <div class="fixed-top-shell">
-        <div class="fixed-top-inner">
-            <div class="fixed-header-panel">
-                <div id="fixed-header-anchor"></div>
-            </div>
-        </div>
+<div class="fixed-top-shell">
+    <div class="fixed-top-inner">
+        <div id="fixed-header-anchor"></div>
     </div>
-    <div class="header-spacer"></div>
-    """,
+</div>
+<div class="header-spacer"></div>
+""",
     unsafe_allow_html=True,
 )
 
 # =========================
 # Search Area
 # =========================
-with st.container():
-    st.markdown('<div class="fixed-header-panel">', unsafe_allow_html=True)
+header_col1, header_col2 = st.columns([1, 8])
 
-    header_col1, header_col2 = st.columns([1, 8])
+with header_col1:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width=92)
 
-    with header_col1:
-        if LOGO_PATH.exists():
-            st.image(str(LOGO_PATH), width=92)
-
-    with header_col2:
-        st.markdown(
-            """
-            <div class="hero-box">
-                <div class="hero-title">תחנות טעינה - סוכן ניתוח מתחרים</div>
-                <div class="hero-subtitle">חיפוש חכם, תשובות AI והמלצות על עמדות טעינה לרכב חשמלי</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<div class="search-panel">', unsafe_allow_html=True)
-    st.markdown('<div class="search-title">חיפוש חכם</div>', unsafe_allow_html=True)
+with header_col2:
     st.markdown(
-        '<div class="quick-caption">הזן שאלה או השתמש בשאילתות המהירות מהצד</div>',
+        """
+<div class="hero-box">
+<div class="hero-title">תחנות טעינה - סוכן ניתוח מתחרים</div>
+<div class="hero-subtitle">
+חיפוש חכם, תשובות AI והמלצות על עמדות טעינה לרכב חשמלי
+</div>
+</div>
+""",
         unsafe_allow_html=True,
     )
 
-    q1, q2, q3 = st.columns([6, 2, 2])
+q1, q2, q3 = st.columns([6, 2, 2])
 
-    with q1:
-        _query = st.text_input(
-            "שאל את ה־AI Assistant",
-            key="query_input",
-            placeholder="לדוגמה: איפה יש CCS2 בתל אביב?",
-        )
+with q1:
+    st.text_input(
+        "שאל את ה־AI Assistant",
+        key="query_input",
+        placeholder="לדוגמה: איפה יש CCS2 בתל אביב?",
+    )
 
-    with q2:
-        top_k = st.number_input(
-            "מספר תוצאות",
-            min_value=1,
-            max_value=20,
-            value=5,
-            step=1,
-        )
+with q2:
+    top_k = st.number_input(
+        "מספר תוצאות",
+        min_value=1,
+        max_value=20,
+        value=5,
+        step=1,
+    )
 
-    with q3:
-        generate_ai_summary = st.toggle("תשובת AI", value=True)
+with q3:
+    generate_ai_summary = st.toggle("תשובת AI", value=True)
 
-    search_clicked = st.button("חפש", type="primary", use_container_width=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+search_clicked = st.button("חפש", type="primary", use_container_width=True)
 
 if st.session_state.sidebar_jump_to_top:
     jump_page_to_top()
@@ -210,6 +270,7 @@ if st.session_state.sidebar_jump_to_top:
 # Search Flow
 # =========================
 if search_clicked:
+
     user_query = st.session_state.query_input.strip()
 
     result = search_agent(
@@ -224,34 +285,47 @@ if search_clicked:
 
     if not result["ok"]:
         st.warning(result["error"])
+
     else:
+
         st.session_state.last_results = result["results"]
         st.session_state.last_query = user_query
         st.session_state.assistant_scroll_to_last_user = False
 
         if generate_ai_summary and result["ai_answer"]:
-            st.session_state.chat_history.append({"role": "user", "content": user_query})
-            st.session_state.chat_history.append({"role": "assistant", "content": result["ai_answer"]})
+
+            st.session_state.chat_history.append(
+                {"role": "user", "content": user_query}
+            )
+
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": result["ai_answer"]}
+            )
+
             st.session_state.assistant_scroll_to_last_user = True
 
 # =========================
-# Assistant Section
+# Assistant
 # =========================
 st.markdown('<div class="section-title">Assistant</div>', unsafe_allow_html=True)
+
 render_chat_history(
     st.session_state.chat_history,
     scroll_to_last_user=st.session_state.assistant_scroll_to_last_user,
 )
+
 st.session_state.assistant_scroll_to_last_user = False
 
 # =========================
-# Results / KPI / Map
+# Results / KPI
 # =========================
 results = st.session_state.last_results
 last_query = st.session_state.last_query
 
 st.markdown('<div class="section-title">מדדים</div>', unsafe_allow_html=True)
+
 if results:
+
     k1, k2, k3, k4 = st.columns(4)
 
     with k1:
@@ -265,34 +339,61 @@ if results:
 
     with k3:
         unique_cities = sorted(
-            set(safe_text(r["metadata"].get("city")) for r in results if safe_text(r["metadata"].get("city")))
+            set(
+                safe_text(r["metadata"].get("city"))
+                for r in results
+                if safe_text(r["metadata"].get("city"))
+            )
         )
+
         st.metric("ערים בתוצאות", len(unique_cities))
 
     with k4:
+
         dc_count = sum(
-            1 for r in results if safe_text(r["metadata"].get("current_type")).upper() == "DC"
+            1
+            for r in results
+            if safe_text(r["metadata"].get("current_type")).upper() == "DC"
         )
+
         st.metric("תוצאות DC", dc_count)
+
 else:
     st.info("אין עדיין מדדים להצגה.")
 
+# =========================
+# Map
+# =========================
 st.markdown('<div class="section-title">מפת תוצאות</div>', unsafe_allow_html=True)
+
 if results:
+
     fmap = build_folium_map(results)
+
     if fmap is not None:
+
         from streamlit_folium import st_folium
+
         st_folium(fmap, use_container_width=True, height=430)
+
     else:
         st.info("אין מיקומים תקינים להצגה על המפה.")
+
 else:
     st.info("אין עדיין תוצאות להצגה על המפה.")
 
+# =========================
+# Results
+# =========================
 st.markdown('<div class="section-title">תוצאות</div>', unsafe_allow_html=True)
+
 if results:
+
     st.caption(f"שאילתה אחרונה: {last_query}")
+
     for idx, result_item in enumerate(results, start=1):
         render_result_card(result_item, idx)
+
 else:
     st.write("אין עדיין תוצאות להצגה.")
 
