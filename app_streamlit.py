@@ -318,6 +318,25 @@ div[data-testid="stToggle"] div[role="switch"][aria-checked="false"] {
 
 /* Mobile fixes */
 @media (max-width: 768px) {
+
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        min-width: 0 !important;
+        max-width: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="false"] > div {
+        min-width: 0 !important;
+        max-width: 0 !important;
+        width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
     .fixed-top-shell {
         position: static;
         padding-left: 0.5rem;
