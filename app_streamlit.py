@@ -1,68 +1,149 @@
 from __future__ import annotations
 
 import os
+import traceback
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
-from Utils.ai_utils import generate_ai_answer, get_embedding
-from Utils.geo_utils import detect_geo_intent, geo_filter
-from Utils.rerank_utils import apply_filters, rerank_results
-from Utils.search_utils import get_chroma_collection, load_all_metadata, search_vector_db
-from Utils.ui_utils import (
-    get_global_css,
-    jump_page_to_top,
-    render_chat_history,
-    render_result_card,
-    build_folium_map,
-    safe_text,
+# =========================
+# Page Setup
+# =========================
+st.set_page_config(
+    page_title="תחנות טעינה - סוכן ניתוח מתחרים",
+    page_icon="⚡",
+    layout="wide",
 )
 
+# =========================
+# Early Debug / Paths
+# =========================
+APP_DIR = Path(__file__).parent
+CHROMA_DIR = APP_DIR / "chroma_db"
+DATA_DIR = APP_DIR / "data"
+LOGO_PATH = APP_DIR / "paz_logo.png"
+UTILS_DIR = APP_DIR / "Utils"
+
 load_dotenv()
+
+st.write("APP STARTED")
+st.write("Current working dir:", os.getcwd())
+st.write("APP_DIR:", str(APP_DIR))
+st.write("APP_DIR exists:", APP_DIR.exists())
+
+try:
+    st.write("Files in APP_DIR:", os.listdir(APP_DIR))
+except Exception as e:
+    st.write("Failed listing APP_DIR:", str(e))
+
+st.write("CHROMA_DIR:", str(CHROMA_DIR))
+st.write("CHROMA_DIR exists:", CHROMA_DIR.exists())
+if CHROMA_DIR.exists():
+    try:
+        st.write("CHROMA_DIR files:", os.listdir(CHROMA_DIR))
+    except Exception as e:
+        st.write("Failed listing CHROMA_DIR:", str(e))
+
+st.write("DATA_DIR:", str(DATA_DIR))
+st.write("DATA_DIR exists:", DATA_DIR.exists())
+if DATA_DIR.exists():
+    try:
+        st.write("DATA_DIR files:", os.listdir(DATA_DIR))
+    except Exception as e:
+        st.write("Failed listing DATA_DIR:", str(e))
+
+st.write("UTILS_DIR:", str(UTILS_DIR))
+st.write("UTILS_DIR exists:", UTILS_DIR.exists())
+if UTILS_DIR.exists():
+    try:
+        st.write("UTILS_DIR files:", os.listdir(UTILS_DIR))
+    except Exception as e:
+        st.write("Failed listing UTILS_DIR:", str(e))
+
+st.write("LOGO_PATH exists:", LOGO_PATH.exists())
+
+# =========================
+# Imports from Utils (guarded)
+# =========================
+try:
+    from Utils.ai_utils import generate_ai_answer, get_embedding
+    from Utils.geo_utils import detect_geo_intent, geo_filter
+    from Utils.rerank_utils import apply_filters, rerank_results
+    from Utils.search_utils import get_chroma_collection, load_all_metadata, search_vector_db
+    from Utils.ui_utils import (
+        get_global_css,
+        jump_page_to_top,
+        render_chat_history,
+        render_result_card,
+        build_folium_map,
+        safe_text,
+    )
+
+    st.success("Utils imports loaded successfully")
+
+except Exception as e:
+    st.error("Failed importing Utils modules")
+    st.code(traceback.format_exc())
+    st.stop()
 
 # =========================
 # Config
 # =========================
-APP_DIR = Path(__file__).parent
-CHROMA_DIR = APP_DIR / "chroma_db"
 COLLECTION_NAME = "ev_stations_lab3"
-LOGO_PATH = APP_DIR / "paz_logo.png"
 
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
 AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT")
 
+# Debug secrets existence
+st.write("API KEY exists:", bool(AZURE_OPENAI_API_KEY))
+st.write("ENDPOINT exists:", bool(AZURE_OPENAI_ENDPOINT))
+st.write("EMBEDDING DEPLOYMENT:", AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+st.write("CHAT DEPLOYMENT:", AZURE_OPENAI_CHAT_DEPLOYMENT)
+
 if not AZURE_OPENAI_API_KEY:
-    raise ValueError("Missing AZURE_OPENAI_API_KEY")
+    st.error("Missing AZURE_OPENAI_API_KEY")
+    st.stop()
 
 if not AZURE_OPENAI_ENDPOINT:
-    raise ValueError("Missing AZURE_OPENAI_ENDPOINT")
+    st.error("Missing AZURE_OPENAI_ENDPOINT")
+    st.stop()
 
 if not AZURE_OPENAI_EMBEDDING_DEPLOYMENT:
-    raise ValueError("Missing AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    st.error("Missing AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    st.stop()
 
 if not AZURE_OPENAI_CHAT_DEPLOYMENT:
-    raise ValueError("Missing AZURE_OPENAI_CHAT_DEPLOYMENT")
-
-client = AzureOpenAI(
-    api_key=AZURE_OPENAI_API_KEY,
-    api_version="2024-02-01",
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
-)
+    st.error("Missing AZURE_OPENAI_CHAT_DEPLOYMENT")
+    st.stop()
 
 # =========================
-# Page Setup
+# Azure OpenAI Client
 # =========================
-st.set_page_config(
-    page_title="תחנות טעינה - סוכן ניתוח מתחרים",
-    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "⚡",
-    layout="wide",
-)
+try:
+    client = AzureOpenAI(
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-02-01",
+        azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    )
+    st.success("AzureOpenAI client created successfully")
+except Exception:
+    st.error("Failed creating AzureOpenAI client")
+    st.code(traceback.format_exc())
+    st.stop()
 
-st.markdown(get_global_css(), unsafe_allow_html=True)
+# =========================
+# Global CSS
+# =========================
+try:
+    st.markdown(get_global_css(), unsafe_allow_html=True)
+except Exception:
+    st.error("Failed applying global CSS")
+    st.code(traceback.format_exc())
+    st.stop()
 
 # =========================
 # Session State
@@ -93,10 +174,23 @@ if st.session_state.pending_query is not None:
     st.session_state.pending_query = None
 
 # =========================
-# Collection + Metadata
+# Load Collection + Metadata
 # =========================
-collection = get_chroma_collection(CHROMA_DIR, COLLECTION_NAME)
-metadata_df = load_all_metadata(collection)
+try:
+    collection = get_chroma_collection(CHROMA_DIR, COLLECTION_NAME)
+    st.success("Chroma collection loaded successfully")
+except Exception:
+    st.error("Failed loading Chroma collection")
+    st.code(traceback.format_exc())
+    st.stop()
+
+try:
+    metadata_df = load_all_metadata(collection)
+    st.success(f"Metadata loaded successfully. Rows: {len(metadata_df)}")
+except Exception:
+    st.error("Failed loading metadata dataframe")
+    st.code(traceback.format_exc())
+    st.stop()
 
 city_options = ["הכל"]
 company_options = ["הכל"]
@@ -112,6 +206,19 @@ if not metadata_df.empty:
     current_type_options += sorted(
         [x for x in metadata_df["current_type"].dropna().astype(str).unique().tolist() if x.strip()]
     )
+
+# =========================
+# Debug Expander
+# =========================
+with st.expander("Debug מידע טכני", expanded=False):
+    st.write("APP_DIR:", str(APP_DIR))
+    st.write("CHROMA_DIR:", str(CHROMA_DIR))
+    st.write("COLLECTION_NAME:", COLLECTION_NAME)
+    st.write("Logo exists:", LOGO_PATH.exists())
+    st.write("Metadata shape:", getattr(metadata_df, "shape", None))
+    st.write("City options count:", len(city_options))
+    st.write("Company options count:", len(company_options))
+    st.write("Current type options count:", len(current_type_options))
 
 # =========================
 # Sidebar
@@ -291,8 +398,19 @@ if search_clicked:
 
                 final_results = reranked_results[: int(top_k)]
 
-            except Exception as e:
-                st.error(f"החיפוש נכשל: {e}")
+                with st.expander("Debug חיפוש", expanded=False):
+                    st.write("user_query:", user_query)
+                    st.write("detected_city:", detected_city)
+                    st.write("detected_region:", detected_region)
+                    st.write("detected_district:", detected_district)
+                    st.write("raw_results:", len(raw_results))
+                    st.write("metadata_filtered_results:", len(metadata_filtered_results))
+                    st.write("geo_filtered_results:", len(geo_filtered_results))
+                    st.write("final_results:", len(final_results))
+
+            except Exception:
+                st.error("החיפוש נכשל")
+                st.code(traceback.format_exc())
                 final_results = []
 
         st.session_state.last_results = final_results
@@ -309,8 +427,10 @@ if search_clicked:
                         results=final_results,
                         chat_history=st.session_state.chat_history,
                     )
-                except Exception as e:
-                    ai_answer = f"לא ניתן היה לייצר תשובת AI: {e}"
+                except Exception:
+                    ai_answer = "לא ניתן היה לייצר תשובת AI."
+                    st.error("AI answer generation failed")
+                    st.code(traceback.format_exc())
 
             st.session_state.chat_history.append({"role": "user", "content": user_query})
             st.session_state.chat_history.append({"role": "assistant", "content": ai_answer})
@@ -361,13 +481,16 @@ else:
 
 st.markdown('<div class="section-title">מפת תוצאות</div>', unsafe_allow_html=True)
 if results:
-    fmap = build_folium_map(results)
-    if fmap is not None:
-        from streamlit_folium import st_folium
-
-        st_folium(fmap, use_container_width=True, height=430)
-    else:
-        st.info("אין מיקומים תקינים להצגה על המפה.")
+    try:
+        fmap = build_folium_map(results)
+        if fmap is not None:
+            from streamlit_folium import st_folium
+            st_folium(fmap, use_container_width=True, height=430)
+        else:
+            st.info("אין מיקומים תקינים להצגה על המפה.")
+    except Exception:
+        st.error("Map rendering failed")
+        st.code(traceback.format_exc())
 else:
     st.info("אין עדיין תוצאות להצגה על המפה.")
 
@@ -375,7 +498,11 @@ st.markdown('<div class="section-title">תוצאות</div>', unsafe_allow_html=T
 if results:
     st.caption(f"שאילתה אחרונה: {last_query}")
     for idx, result in enumerate(results, start=1):
-        render_result_card(result, idx)
+        try:
+            render_result_card(result, idx)
+        except Exception:
+            st.error(f"Failed rendering result card #{idx}")
+            st.code(traceback.format_exc())
 else:
     st.write("אין עדיין תוצאות להצגה.")
 
