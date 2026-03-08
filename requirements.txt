@@ -2,4 +2,12 @@
 # Ref: aka.ms/functions-azure-monitor-python
 # azure-monitor-opentelemetry
 
-https://charging-stations-agent.onrender.com/
+streamlit==1.44.1
+openai==1.68.2
+python-dotenv==1.0.1
+numpy==1.26.4
+pandas==2.2.3
+chromadb==0.4.24
+pydantic==1.10.15
+folium==0.19.5
+streamlit-folium==0.24.0
