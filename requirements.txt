@@ -2,7 +2,6 @@
 # Ref: aka.ms/functions-azure-monitor-python
 # azure-monitor-opentelemetry
 
-azure-functions
 openai
 python-dotenv
 numpy
